@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -63,16 +63,19 @@ public class InterruptibleScheduler extends AbstractExecutorScheduler<ExecutorSe
                 }
             }
         };
-        delegate[0] = executor.submit(() -> {
-            try {
-                command.run();
-                result.success(null);
-                return null;
-            } catch (final Throwable ex) {
-                result.failure(ex);
-                throw ex;
+        Runnable wrapped = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    command.run();
+                    result.internalSuccess(null);
+                } catch (final Throwable ex) {
+                    result.internalFailure(ex);
+                    throw ex;
+                }
             }
-        });
+        };
+        delegate[0] = executor.submit(wrapped);
         return result;
     }
     

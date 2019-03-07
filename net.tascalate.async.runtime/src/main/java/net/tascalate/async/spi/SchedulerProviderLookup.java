@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -38,8 +38,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import net.tascalate.async.api.Scheduler;
-import net.tascalate.async.api.SchedulerProvider;
+import net.tascalate.async.Scheduler;
+import net.tascalate.async.SchedulerProvider;
 import net.tascalate.async.util.Cache;
 
 public class SchedulerProviderLookup {

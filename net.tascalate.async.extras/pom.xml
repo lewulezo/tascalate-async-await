@@ -46,22 +46,21 @@
 	<build>
 		<plugins>
 			<plugin>
-				<groupId>net.tascalate.javaflow</groupId>
-				<artifactId>net.tascalate.javaflow.tools.maven</artifactId>
-				<version>${tascalate.javaflow.version}</version>
-				<!--
-				<configuration>
-					<includeTestClasses>false</includeTestClasses>
-				</configuration>
-				-->
+				<groupId>net.tascalate.async</groupId>
+				<artifactId>net.tascalate.async.tools.maven</artifactId>
+				<version>${project.version}</version>
 				<executions>
 					<execution>
 						<phase>process-classes</phase>
 						<goals>
-							<goal>javaflow-enhance</goal>
+							<goal>tascalate-async-enhance</goal>
 						</goals>
 					</execution>
 				</executions>
+			</plugin>		
+			<plugin>
+				<groupId>net.tascalate.javaflow</groupId>
+				<artifactId>net.tascalate.javaflow.tools.maven</artifactId>
 			</plugin>
 		</plugins>
 	</build>

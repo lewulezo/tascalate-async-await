@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,15 +27,19 @@ package net.tascalate.async.tools.core;
 import static net.tascalate.async.tools.core.BytecodeIntrospection.createOuterClassMethodArgFieldName;
 import static net.tascalate.async.tools.core.BytecodeIntrospection.invisibleTypeAnnotationsOf;
 import static net.tascalate.async.tools.core.BytecodeIntrospection.isLoadOpcode;
+import static net.tascalate.async.tools.core.BytecodeIntrospection.methodsOf;
 import static net.tascalate.async.tools.core.BytecodeIntrospection.visibleTypeAnnotationsOf;
 import static org.objectweb.asm.Opcodes.*;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import org.objectweb.asm.Handle;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
@@ -46,6 +50,7 @@ import org.objectweb.asm.tree.IincInsnNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -53,9 +58,9 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
-public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
-    private final static Type ASYNC_GENERATOR_TYPE = Type.getObjectType("net/tascalate/async/core/AsyncGenerator");
-    private final static Type LAZY_GENERATOR_TYPE = Type.getObjectType("net/tascalate/async/core/LazyGenerator");
+public class AsyncGeneratorMethodTransformer extends AbstractAsyncMethodTransformer {
+    private final static Type ASYNC_GENERATOR_METHOD_TYPE = Type.getObjectType("net/tascalate/async/core/AsyncGeneratorMethod");
+    private final static Type LAZY_GENERATOR_TYPE         = Type.getObjectType("net/tascalate/async/core/LazyGenerator");
     
     public AsyncGeneratorMethodTransformer(ClassNode               classNode,
                                            MethodNode              originalAsyncMethodNode,
@@ -65,28 +70,29 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
 
     @Override
     public ClassNode transform() {
-        return transform(ASYNC_GENERATOR_TYPE);
+        return transform(ASYNC_GENERATOR_METHOD_TYPE);
     }
     
     @Override
-    protected MethodNode createReplacementAsyncMethod(String asyncTaskClassName) {
-        return createReplacementAsyncMethod(asyncTaskClassName, ASYNC_GENERATOR_TYPE, "generator", LAZY_GENERATOR_TYPE);
+    protected MethodVisitor createReplacementAsyncMethod(String asyncTaskClassName) {
+        return createReplacementAsyncMethod(asyncTaskClassName, ASYNC_GENERATOR_METHOD_TYPE, "generator", LAZY_GENERATOR_TYPE);
     }
    
     @Override
-    protected MethodNode addAnonymousClassRunMethod(ClassNode asyncRunnableClass, FieldNode outerClassField) {
+    protected MethodVisitor addAnonymousClassRunMethod(ClassNode asyncRunnableClass, FieldNode outerClassField) {
+        List<MethodNode> ownerMethods = methodsOf(classNode);
+        
         boolean isStatic = (originalAsyncMethod.access & Opcodes.ACC_STATIC) != 0;
-        int thisWasInOriginal = isStatic ? 0 : 1;
         int thisShiftNecessary = isStatic ? 1 : 0;
 
-        Type[] argTypes = Type.getArgumentTypes(originalAsyncMethod.desc);
-        log.debug("Method has " + argTypes.length + " arguments");
+        Type[] originalArgTypes = Type.getArgumentTypes(originalAsyncMethod.desc);
+        log.debug("Method has " + originalArgTypes.length + " arguments");
 
-        MethodNode asyncRunMethod = (MethodNode)asyncRunnableClass.visitMethod(
+        MethodNode result = (MethodNode)asyncRunnableClass.visitMethod(
             ACC_PROTECTED, "doRun", "()V", null, new String[]{"java/lang/Throwable"}
         );
 
-        asyncRunMethod.visitAnnotation(SUSPENDABLE_ANNOTATION_TYPE.getDescriptor(), true);
+        result.visitAnnotation(SUSPENDABLE_ANNOTATION_TYPE.getDescriptor(), true);
 
         LabelNode methodStart = new LabelNode();
         LabelNode methodEnd = new LabelNode();
@@ -109,12 +115,13 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
             newTn.visibleTypeAnnotations = copyTypeAnnotations(visibleTypeAnnotationsOf(tn));
             tryCatchBlocks.add(newTn);
         }
-        asyncRunMethod.tryCatchBlocks = tryCatchBlocks;
+        result.tryCatchBlocks = tryCatchBlocks;
 
         InsnList newInstructions = new InsnList();
         newInstructions.add(methodStart);
 
         // Instructions
+        int argumentsLength = Arrays.stream(originalArgTypes).mapToInt(a -> a.getSize()).sum();
         for (AbstractInsnNode insn = originalAsyncMethod.instructions.getFirst(); null != insn; insn = insn.getNext()) {
             if (insn instanceof VarInsnNode) {
                 VarInsnNode vin = (VarInsnNode) insn;
@@ -131,39 +138,44 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                 if (vin.getOpcode() != RET && (vin.var > 0 || isStatic)) {
                     log.debug("Found " + BytecodeTraceUtil.toString(vin));
                     // method argument -> inner class field
-                    if (vin.var < argTypes.length + thisWasInOriginal) {
-                        int i = vin.var - thisWasInOriginal; // method
-                                                             // argument's index
-                        String argName = createOuterClassMethodArgFieldName(i);
-                        String argDesc = argTypes[i].getDescriptor();
+                    int argIdx = findOriginalArgumentIndex(originalArgTypes, vin.var, isStatic);
+                    Type argType = argIdx < 0 ? null : originalArgTypes[argIdx];
+                    if (null != argType) {
+                        String argName = createOuterClassMethodArgFieldName(argIdx);
+                        String argDesc = argType.getDescriptor();
 
                         newInstructions.add(new VarInsnNode(ALOAD, 0));
                         if (isLoadOpcode(vin.getOpcode())) {
-                            assert (argTypes[i].getOpcode(ILOAD) == vin.getOpcode()) : 
-                                "Wrong opcode " + vin.getOpcode() + ", expected " + argTypes[i].getOpcode(ILOAD);
+                            assert (argType.getOpcode(ILOAD) == vin.getOpcode()) : 
+                                "Wrong opcode " + vin.getOpcode() + ", expected " + argType.getOpcode(ILOAD);
 
                             newInstructions.add(new FieldInsnNode(GETFIELD, asyncRunnableClass.name, argName, argDesc));
                         } else {
-                            assert (argTypes[i].getOpcode(ISTORE) == vin.getOpcode()) : 
-                                "Wrong opcode " + vin.getOpcode() + ", expected " + argTypes[i].getOpcode(ISTORE);
+                            assert (argType.getOpcode(ISTORE) == vin.getOpcode()) : 
+                                "Wrong opcode " + vin.getOpcode() + ", expected " + argType.getOpcode(ISTORE);
 
-                            newInstructions.add(new InsnNode(SWAP));
+                            if (argType.getSize() == 2) {
+                                newInstructions.add(new InsnNode(DUP_X2));
+                                newInstructions.add(new InsnNode(POP));
+                            } else {
+                                newInstructions.add(new InsnNode(SWAP));
+                            }
                             newInstructions.add(new FieldInsnNode(PUTFIELD, asyncRunnableClass.name, argName, argDesc));
                         }
                         continue;
                     } else {
                         // decrease local variable indexes
-                        newInstructions.add(new VarInsnNode(vin.getOpcode(), vin.var - argTypes.length + thisShiftNecessary));
+                        newInstructions.add(new VarInsnNode(vin.getOpcode(), vin.var - argumentsLength + thisShiftNecessary));
                         continue;
                     }
                 }
             } else if (insn instanceof IincInsnNode) {
                 IincInsnNode iins = (IincInsnNode)insn; 
-                if (iins.var < argTypes.length + thisWasInOriginal) {
-                    int i = iins.var - thisWasInOriginal; // method
-                    // argument's index
-                    String argName = createOuterClassMethodArgFieldName(i);
-                    String argDesc = argTypes[i].getDescriptor();
+                int argIdx = findOriginalArgumentIndex(originalArgTypes, iins.var, isStatic);
+                Type argType = argIdx < 0 ? null : originalArgTypes[argIdx];
+                if (null != argType) {
+                    String argName = createOuterClassMethodArgFieldName(argIdx);
+                    String argDesc = argType.getDescriptor();
                     // i+=2 ==> this.val$2 = this.val$2 + 2;
                     newInstructions.add(new VarInsnNode(ALOAD, 0));
                     newInstructions.add(new FieldInsnNode(GETFIELD, asyncRunnableClass.name, argName, argDesc));
@@ -173,7 +185,7 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                     newInstructions.add(new InsnNode(SWAP));
                     newInstructions.add(new FieldInsnNode(PUTFIELD, asyncRunnableClass.name, argName, argDesc));                    
                 } else {
-                    newInstructions.add(new IincInsnNode(iins.var - argTypes.length + thisShiftNecessary, iins.incr));
+                    newInstructions.add(new IincInsnNode(iins.var - argumentsLength + thisShiftNecessary, iins.incr));
                 }
                 continue;
                 
@@ -214,7 +226,7 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                     );
                     continue;
 
-                } else if (min.getOpcode() == INVOKESTATIC && ASYNC_CALL_NAME.equals(min.owner)) {
+                } else if (min.getOpcode() == INVOKESTATIC && CALL_CONTXT_NAME.equals(min.owner)) {
                     switch (min.name) {
                         case "yield":
                             Type[] args = Type.getArgumentTypes(min.desc);
@@ -232,7 +244,7 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                             }
                             newInstructions.add(
                                 new MethodInsnNode(INVOKEVIRTUAL, 
-                                                   ASYNC_GENERATOR_TYPE.getInternalName(), 
+                                                   ASYNC_GENERATOR_METHOD_TYPE.getInternalName(), 
                                                    "yield", 
                                                    Type.getMethodDescriptor(Type.getReturnType(min.desc), args), 
                                                    false
@@ -243,7 +255,7 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                             newInstructions.add(new VarInsnNode(ALOAD, 0));
                             newInstructions.add(
                                     new MethodInsnNode(INVOKEVIRTUAL, 
-                                                       ASYNC_GENERATOR_TYPE.getInternalName(), 
+                                                       ASYNC_GENERATOR_METHOD_TYPE.getInternalName(), 
                                                        "interrupted", 
                                                        Type.getMethodDescriptor(Type.BOOLEAN_TYPE), 
                                                        false
@@ -271,6 +283,16 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
                             throw new IllegalStateException("Async result must be used only inside non-generator methods");
                     }
                 }
+            } else if (insn instanceof InvokeDynamicInsnNode) {
+                Object[] opts = findOwnerInvokeDynamic(insn, ownerMethods);
+                if (null != opts) {
+                    Handle h = (Handle)opts[0];
+                    MethodNode lambdaAccess = getAccessMethod(h.getOwner(), h.getName(), h.getDesc(), "L");
+                    newInstructions.add(
+                        new MethodInsnNode(INVOKESTATIC, classNode.name, lambdaAccess.name, lambdaAccess.desc, false)
+                    );
+                    continue;
+                }
             } else if (insn.getOpcode() == ARETURN) {
                 // GOTO methodEnd instead of returning value
                 newInstructions.add(new JumpInsnNode(GOTO, methodEnd));
@@ -289,12 +311,12 @@ public class AsyncGeneratorMethodTransformer extends AsyncMethodTransformer {
         newInstructions.add(new InsnNode(POP));
         newInstructions.add(new InsnNode(RETURN));
 
-        asyncRunMethod.instructions = newInstructions;
+        result.instructions = newInstructions;
         // Maxs
         // 2 for exception handling & asyncResult replacement
-        asyncRunMethod.maxLocals = Math.max(originalAsyncMethod.maxLocals - argTypes.length + thisShiftNecessary, 2);
-        asyncRunMethod.maxStack = Math.max(originalAsyncMethod.maxStack, 2);
+        result.maxLocals = Math.max(originalAsyncMethod.maxLocals - argumentsLength + thisShiftNecessary, 2);
+        result.maxStack = Math.max(originalAsyncMethod.maxStack, 2);
 
-        return asyncRunMethod;        
+        return result;        
     }
 }

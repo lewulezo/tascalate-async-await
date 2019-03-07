@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -27,23 +27,30 @@ package net.tascalate.async.core;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
-import net.tascalate.async.api.Generator;
-import net.tascalate.async.api.YieldReply;
-import net.tascalate.async.api.suspendable;
+import net.tascalate.async.AsyncGenerator;
+import net.tascalate.async.InteractiveSequence;
+import net.tascalate.async.Sequence;
+import net.tascalate.async.YieldReply;
+import net.tascalate.async.suspendable;
 
-class LazyGenerator<T> implements Generator<T> {
-    private final AsyncGenerator<?> owner;
+class LazyGenerator<T> implements AsyncGenerator<T> {
+    private final AsyncGeneratorMethod<?> owner;
 	
     private CompletableFuture<YieldReply<T>> producerLock;
     private CompletableFuture<?> consumerLock;
     private CompletionStage<T> latestFuture;
 
-    private Generator<T> currentDelegate = Generator.empty();
+    private Sequence<? extends CompletionStage<T>> currentDelegate = Sequence.empty();
     
-    LazyGenerator(AsyncGenerator<T> owner) {
+    LazyGenerator(AsyncGeneratorMethod<T> owner) {
     	this.owner = owner;
     }
 
+    @Override
+    public CompletionStage<T> next() {
+        return next(NO_PARAM);
+    }
+    
     @Override
     public CompletionStage<T> next(Object param) {
         // Loop to replace tail recursion - BEGIN
@@ -56,7 +63,16 @@ class LazyGenerator<T> implements Generator<T> {
             FutureResult<T> latestResult = FutureResult.of(latestFuture);
             
             // Could we advance further current delegate?
-            latestFuture = currentDelegate.next(param);
+            if (NO_PARAM == param) {
+                latestFuture = currentDelegate.next();
+            } else if (currentDelegate instanceof InteractiveSequence) {
+                InteractiveSequence<? extends CompletionStage<T>> typedDelegate 
+                    = (InteractiveSequence<? extends CompletionStage<T>>)currentDelegate;
+                latestFuture = typedDelegate.next(param);
+            } else {
+                // TODO: does it make sense to throw an error here?
+                latestFuture = currentDelegate.next();
+            }
                 
             if (null != latestFuture) {
                 // Yes, we can
@@ -84,8 +100,8 @@ class LazyGenerator<T> implements Generator<T> {
         end(null);
     }
 
-    final @suspendable YieldReply<T> produce(Generator<T> values) {
-        currentDelegate = values;
+    final @suspendable YieldReply<T> produce(Sequence<? extends CompletionStage<T>> pendingValues) {
+        currentDelegate = pendingValues;
         // Re-set producerLock
         // It's important to reset it before unlocking consumer!
         producerLock = new CompletableFuture<>();
@@ -109,7 +125,7 @@ class LazyGenerator<T> implements Generator<T> {
         } else {
             owner.failure(ex);
         }
-        currentDelegate = Generator.empty();
+        currentDelegate = Sequence.empty();
         releaseConsumerLock();
     }
 
@@ -198,4 +214,6 @@ class LazyGenerator<T> implements Generator<T> {
         
         private static final FutureResult<Object> EMPTY = new Success<Object>(null);
     }
+    
+    private static final Object NO_PARAM = new Object();
 }

@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -32,6 +32,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.commons.javaflow.spi.ResourceLoader;
 import org.apache.commons.logging.Log;
@@ -46,9 +49,19 @@ public class AsyncAwaitClassFileGenerator {
 
     private final static Log log = LogFactory.getLog(AsyncAwaitClassFileGenerator.class);
     
-    private final static Type TYPE_COMPLETION_STAGE  = Type.getObjectType("java/util/concurrent/CompletionStage");
-    private final static Type TYPE_TASCALATE_PROMISE = Type.getObjectType("net/tascalate/concurrent/Promise");
-    private final static Type TYPE_GENERATOR         = Type.getObjectType("net/tascalate/async/api/Generator");
+    private final static Type COMPLETION_STAGE_TYPE   = Type.getObjectType("java/util/concurrent/CompletionStage");
+    private final static Type COMPLETABLE_FUTURE_TYPE = Type.getObjectType("java/util/concurrent/CompletableFuture");
+    private final static Type ASYNC_VALUE_TYPE        = Type.getObjectType("net/tascalate/async/AsyncValue");
+    private final static Type TASCALATE_PROMISE_TYPE  = Type.getObjectType("net/tascalate/concurrent/Promise");
+    private final static Type ASYNC_GENERATOR_TYPE    = Type.getObjectType("net/tascalate/async/AsyncGenerator");
+    
+    private static final Set<Type> ASYNC_TASK_RETURN_TYPES = 
+        Stream.of(COMPLETION_STAGE_TYPE, 
+                  COMPLETABLE_FUTURE_TYPE,
+                  ASYNC_VALUE_TYPE,
+                  TASCALATE_PROMISE_TYPE,
+                  Type.VOID_TYPE)
+               .collect(Collectors.toSet());
     
     // New generated classes
     private final List<ClassNode> newClasses = new ArrayList<ClassNode>();
@@ -113,10 +126,10 @@ public class AsyncAwaitClassFileGenerator {
         for (MethodNode methodNode : new ArrayList<MethodNode>(methodsOf(classNode))) {
             if (isAsyncMethod(methodNode)) {
                 Type returnType = Type.getReturnType(methodNode.desc);
-                AsyncMethodTransformer transformer = null;
-                if (TYPE_COMPLETION_STAGE.equals(returnType) || TYPE_TASCALATE_PROMISE.equals(returnType) || Type.VOID_TYPE.equals(returnType)) {
+                AbstractAsyncMethodTransformer transformer = null;
+                if (ASYNC_TASK_RETURN_TYPES.contains(returnType)) {
                     transformer = new AsyncTaskMethodTransformer(classNode, methodNode, accessMethods);
-                } else if (TYPE_GENERATOR.equals(returnType)) {
+                } else if (ASYNC_GENERATOR_TYPE.equals(returnType)) {
                     transformer = new AsyncGeneratorMethodTransformer(classNode, methodNode, accessMethods);
                 } else {
                     // throw ex?

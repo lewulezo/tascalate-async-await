@@ -24,27 +24,31 @@
  */
 package net.tascalate.async.examples.generator;
 
-import static net.tascalate.async.api.AsyncCall.async;
-import static net.tascalate.async.api.AsyncCall.yield;
-import static net.tascalate.async.api.AsyncCall.await;
-import static net.tascalate.async.api.AsyncCall.interrupted;
+import static net.tascalate.async.CallContext.async;
+import static net.tascalate.async.CallContext.await;
+import static net.tascalate.async.CallContext.interrupted;
+import static net.tascalate.async.CallContext.yield;
 
 import java.io.FileNotFoundException;
+
 import java.util.Date;
 import java.util.StringJoiner;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import net.tascalate.async.api.Generator;
-import net.tascalate.async.api.ValuesGenerator;
-import net.tascalate.async.api.YieldReply;
-import net.tascalate.async.api.async;
-import net.tascalate.async.api.suspendable;
+import net.tascalate.async.AsyncGenerator;
+import net.tascalate.async.Sequence;
+import net.tascalate.async.YieldReply;
+import net.tascalate.async.async;
+import net.tascalate.async.suspendable;
 
 import net.tascalate.concurrent.CompletableTask;
+
+import net.tascalate.javaflow.SuspendableIterator;
 
 public class GeneratorExample {
 
@@ -55,7 +59,7 @@ public class GeneratorExample {
         final GeneratorExample example = new GeneratorExample();
         example.asyncOperation();
         final CompletionStage<String> result1 = example.mergeStrings(", ");
-        final CompletionStage<String> result2 = example.iterateStringsEx();
+        final CompletionStage<String> result2 = example.iterateStringsEx(11);
         
         result2.thenCombine(result1, (v1, v2) -> "\n" + v1 + "\n" + v2)
         .whenComplete((v, e) -> {
@@ -70,9 +74,9 @@ public class GeneratorExample {
     }
 
     @async
-    CompletionStage<String> mergeStrings(String delimeter) {
+    CompletableFuture<String> mergeStrings(String delimeter) {
         StringJoiner joiner = new StringJoiner(", ");
-        try (Generator<String> generator = produceStrings()) {
+        try (AsyncGenerator<String> generator = produceStrings()) {
         	System.out.println("%%MergeStrings - before iterations");
             String param = "GO!";
             int i = 0;
@@ -93,10 +97,20 @@ public class GeneratorExample {
     }
     
     @async
-    CompletionStage<String> iterateStringsEx() {
-        try (ValuesGenerator<String> generator = moreStringsEx().values()) {
-            while (generator.hasNext()) {
-            	String v = generator.next();
+    CompletionStage<String> iterateStringsEx(int z) {
+        z += 2;
+        System.out.println(z);
+        int x = 3;
+        x++;
+        if (x < z) {
+            x += 5;
+        }
+        System.out.println(x);
+        
+        try (SuspendableIterator<String> values = moreStringsEx().valuesIterator()) {
+            
+            while (values.hasNext()) {
+                String v = values.next();
                 System.out.println("+++Received: " + v);
             }
         } catch (FileNotFoundException | IllegalArgumentException ex) {
@@ -122,27 +136,27 @@ public class GeneratorExample {
     }
     
     @async
-    Generator<String> produceStrings() {
+    AsyncGenerator<String> produceStrings() {
        
     	System.out.println("%%ProduceStrings - starting + ");
         YieldReply<String> o;
         
-        o = yield(Generator.empty());
+        o = yield(Sequence.empty());
         System.out.println("INITIAL PARAM: " + o.param);
         
         o = yield(waitString("ABC"));
         System.out.println("Processed: " + o + ", " + new Date());
         
-        o = yield(Generator.readyFirst(waitString("PV-1", 2000L), waitString("PV-2", 1500L), waitString("PV-3", 1000L)));
+        o = yield( AsyncGenerator.readyFirst(waitString("PV-1", 2000L), waitString("PV-2", 1500L), waitString("PV-3", 1000L)) );
         System.out.println("AFTER LIST PENDING: " + o);
 
         String s = await(waitString("InternalAsync"));
         System.out.println("INTERNALLY: " + s);
 
-        o = yield(Generator.empty());
+        o = yield(Sequence.empty());
         System.out.println("AFTER EMPTY: " + o);
         
-        o = yield(Generator.of("RV-1", "RV-2", "RV-3"));
+        o = yield(AsyncGenerator.from("RV-1", "RV-2", "RV-3"));
         System.out.println("AFTER LIST READY: " + o);
 
         System.out.println("Is generator interrupted: " + interrupted());
@@ -155,7 +169,7 @@ public class GeneratorExample {
 
         yield(chainedGenerator());
 
-        try (Generator<String> nested = moreStrings()) {
+        try (AsyncGenerator<String> nested = moreStrings()) {
         	CompletionStage<String> singleResult; 
             while (null != (singleResult = nested.next())) {
             	String v = await(singleResult);
@@ -183,7 +197,7 @@ public class GeneratorExample {
 
     // Private to ensure that generated accessor methods work 
     @async
-    private Generator<String> moreStrings() {
+    private AsyncGenerator<String> moreStrings() {
         yield(waitString("111"));
         yield(waitString("222"));
         yield("333");
@@ -193,7 +207,7 @@ public class GeneratorExample {
     }
     
     @async
-    private Generator<String> moreStringsEx() throws FileNotFoundException {
+    private AsyncGenerator<String> moreStringsEx() throws FileNotFoundException {
         yield(waitString("111"));
         yield(waitString("222"));
         yield("333");
@@ -205,7 +219,7 @@ public class GeneratorExample {
     }
 
     @async
-    Generator<String> chainedGenerator() {
+    AsyncGenerator<String> chainedGenerator() {
         yield(waitString("CHAINED-1"));
         yield(waitString("CHAINED-2"));
         yield("CHAINED-3");

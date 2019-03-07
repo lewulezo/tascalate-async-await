@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,11 +24,12 @@
  */
 package net.tascalate.async.core;
 
+import java.util.Comparator;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.stream.StreamSupport;
 
-import net.tascalate.async.api.Scheduler;
+import net.tascalate.async.Scheduler;
 import net.tascalate.async.spi.SchedulerResolver;
 import net.tascalate.async.util.Cache;
 
@@ -40,7 +41,7 @@ class SchedulerResolvers {
         ServiceLoader<SchedulerResolver> serviceLoader = getServiceLoader(serviceClassLoader);
 
         return StreamSupport.stream(serviceLoader.spliterator(), false)
-            .sorted()
+            .sorted(SCHEDULER_RESOLVER_BY_PRIORITY)
             .map(l -> l.resolve(owner, ownerDeclaringClass))
             .filter(Objects::nonNull)
             .findFirst()
@@ -87,7 +88,9 @@ class SchedulerResolvers {
         return result;
     }
     
-    private
-    static final Cache<ClassLoader, ServiceLoader<SchedulerResolver>> SERVICE_LOADER_BY_CLASS_LOADER = new Cache<>();
+    private static final Comparator<SchedulerResolver> SCHEDULER_RESOLVER_BY_PRIORITY = 
+        Comparator.comparing(SchedulerResolver::priority).reversed();
+    private static final Cache<ClassLoader, ServiceLoader<SchedulerResolver>> SERVICE_LOADER_BY_CLASS_LOADER = 
+        new Cache<>();
 
 }

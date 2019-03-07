@@ -1,3 +1,4 @@
+[![Maven Central](https://img.shields.io/maven-central/v/net.tascalate.async/net.tascalate.async.parent.svg)](https://search.maven.org/artifact/net.tascalate.async/net.tascalate.async.parent/1.0.0/pom) [![GitHub release](https://img.shields.io/github/release/vsilaev/tascalate-async-await.svg)](https://github.com/vsilaev/tascalate-async-await/releases/tag/1.0.0) [![license](https://img.shields.io/github/license/vsilaev/tascalate-async-await.svg)](https://github.com/vsilaev/tascalate-async-await/blob/master/LICENSE)
 # Why async-await?
 Asynchronous programming has long been a useful way to perform operations that don’t necessarily need to hold up the flow or responsiveness of an application. Generally, these are either compute-bound operations or I/O bound operations. Compute-bound operations are those where computations can be done on a separate thread, leaving the main thread to continue its own processing, while I/O bound operations involve work that takes place externally and may not need to block a thread while such work takes place. Common examples of I/O bound operations are file and network operations. 
 
@@ -39,7 +40,7 @@ Second, add the following build plugins in the specified order:
     <plugin>
       <groupId>net.tascalate.javaflow</groupId>
       <artifactId>net.tascalate.javaflow.tools.maven</artifactId>
-      <version>2.1</version>
+      <version>2.3.1</version>
       <executions>
         <execution>
 	  <phase>process-classes</phase>
@@ -54,11 +55,11 @@ Second, add the following build plugins in the specified order:
 ```
 You are ready to start coding!
 # Asynchronous tasks
-The first type of functions the library supports is asycnhronous task. Asynchronous task is a method (either instance or class method) that is annotated with `net.tascalate.async.api.async` annotation and returns `CompletionStage<T>` or `void`. In the later case it is a "fire-and-forget" task that is intended primarly to be used for event handlers inside UI framework (like JavaFX or Swing). Let us write a simple example:
+The first type of functions the library supports is asycnhronous task. Asynchronous task is a method (either instance or class method) that is annotated with `net.tascalate.async.async` annotation and returns `CompletionStage<T>` or `void`. In the later case it is a "fire-and-forget" task that is intended primarly to be used for event handlers inside UI framework (like JavaFX or Swing). Let us write a simple example:
 ```java
-import static net.tascalate.async.api.AsyncCall.async;
-import static net.tascalate.async.api.AsyncCall.await;
-import net.tascalate.async.api.async;
+import static net.tascalate.async.CallСontext.async;
+import static net.tascalate.async.CallСontext.await;
+import net.tascalate.async.async;
 
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CompletableFuture;
@@ -88,7 +89,7 @@ class MyClass {
     private static final ExecutorService executor = Executors.newFixedThreadPool(4);
 }
 ```
-Thanks to statically imported methods of `net.tascalate.async.api.AsyncCall` the code looks very close to the one developed with languages having native support for async/await. Both `mergeStrings` and `decorateStrings` are asynchronous methods -- they are marked with `net.tascalate.async.api.async` annotation and returns `CompletionStage<T>`. Inside these methods you may call `await` to suspend the method till the `CompletionStage<T>` supplied as the argument is resolved (either sucessfully or exceptionally). Please notice, that you can await for any `CompletionStage<T>` implementation obtained from different libraries - like inside the `decorateStrings` method, including pending result of another asynchronous method - like in `mergeStrings`. 
+Thanks to statically imported methods of `net.tascalate.async.CallСontext` the code looks very close to the one developed with languages having native support for async/await. Both `mergeStrings` and `decorateStrings` are asynchronous methods -- they are marked with `net.tascalate.async.async` annotation and returns `CompletionStage<T>`. Inside these methods you may call `await` to suspend the method till the `CompletionStage<T>` supplied as the argument is resolved (either sucessfully or exceptionally). Please notice, that you can await for any `CompletionStage<T>` implementation obtained from different libraries - like inside the `decorateStrings` method, including pending result of another asynchronous method - like in `mergeStrings`. 
 
 To return a result from the asynchronous method you have to use syntatic construct `return async(value)`. You must always treat both of these statements (calling `async` method and `return`-ing its result) as the single syntatic construct and don't call `async` method separately or store it return value to variable while these will lead to unpredicatble results. It's especially important if your method body is not linear. Depending on your established coding practice how to deal with multiple returns you should use either...
 ```java
@@ -116,6 +117,37 @@ public @async CompletionStage<String> bar(int i) {
     return async(result);
 }
 ```
+It's worth to mention, that when developing code with async/await you should avoid so-called ["async/await hell"](https://medium.com/@7genblogger/escaping-so-called-async-await-hell-in-node-js-b5f5ba5fa9ca). In short, pay special attention what parts of your code may be executed in parallel and what parts require serial execution. Consider the following example:
+```java
+public @async CompletionStage<Long> calculateTotalPrice(Order order) {
+   Long rawItemsPrice = await( calculateRawItemsPrice(order) );  
+   Long shippingCost  = await( calculateShippingCost(order) );  
+   Long taxes         = await( calculateTaxes(order) );  
+   return async(rawItemsPrice + shippingCost + taxes);
+}
+
+protected @async CompletionStage<Long> calculateRawItemsPrice(Order order) {
+  ...
+}
+
+protected @async CompletionStage<Long> calculateShippingCost(Order order) {
+  ...
+}
+
+protected @async CompletionStage<Long> calculateTaxes(Order order) {
+  ...
+}
+```
+In the above example all async methods `calculateRawItemsPrice`, `calculateShippingCost`, `calculateTaxes` are executed serially, one by one, hence the performance is degraded comparing to the following parallelized solution:
+```java
+public @async CompletionStage<Long> calculateTotalPrice(Order order) {
+   CompletionStage<Long> rawItemsPrice = calculateRawItemsPrice(order);  
+   CompletionStage<Long> shippingCost  = calculateShippingCost(order);  
+   CompletionStage<Long> taxes         = calculateTaxes(order);  
+   return async( await(rawItemsPrice) + await(shippingCost) + await(taxes) );
+}
+```
+This way all inner async operations are started (almost) simualtenously and are running in parallel, unlike in the first example.
 
 # Generators
 

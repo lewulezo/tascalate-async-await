@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,17 +24,11 @@
  */
 package net.tascalate.async.spi;
 
-import net.tascalate.async.api.Scheduler;
+import net.tascalate.async.Scheduler;
 
-public interface SchedulerResolver extends Comparable<SchedulerResolver> {
+public interface SchedulerResolver {
     
     int priority();
     
     Scheduler resolve(Object owner, Class<?> ownerDeclaringClass);
-    
-    @Override
-    default int compareTo(SchedulerResolver other) {
-        // Highest priority first
-        return other.priority() - this.priority();
-    } 
 }

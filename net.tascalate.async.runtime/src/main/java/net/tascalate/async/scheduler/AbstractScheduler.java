@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -28,7 +28,7 @@ import java.util.Collections;
 import java.util.Set;
 import java.util.function.Function;
 
-import net.tascalate.async.api.Scheduler;
+import net.tascalate.async.Scheduler;
 
 public abstract class AbstractScheduler implements Scheduler {
     private final Set<Characteristics> characteristics;
@@ -53,7 +53,7 @@ public abstract class AbstractScheduler implements Scheduler {
     @Override
     public String toString() {
         return String.format(
-            "<scheduler{%s}>[characteristics=%s, contextualizer=%s]",
+            "%s[characteristics=%s, contextualizer=%s]",
             getClass().getSimpleName(), 
             characteristics, 
             null == contextualizer || Function.identity().equals(contextualizer) ? "<none>" : contextualizer.toString()

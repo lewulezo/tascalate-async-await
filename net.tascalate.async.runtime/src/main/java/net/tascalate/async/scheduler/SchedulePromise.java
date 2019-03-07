@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,24 +24,26 @@
  */
 package net.tascalate.async.scheduler;
 
-import net.tascalate.async.core.ResultPromise;
+import java.util.concurrent.CompletableFuture;
 
-class SchedulePromise<T> extends ResultPromise<T> {
-    final boolean success(T value) {
-        return super.internalSuccess(value);
-    }
+class SchedulePromise<T> extends CompletableFuture<T> {
+    SchedulePromise() {}
     
-    final boolean failure(Throwable exception) {
-        return super.internalFailure(exception);
-    }
-    
-    @Override
     protected final boolean internalSuccess(T value) {
-        throw new UnsupportedOperationException("SchedulePromise may not be completed explicitly");
+        return super.complete(value);
+    }
+    
+    protected final boolean internalFailure(Throwable exception) {
+        return super.completeExceptionally(exception);
     }
     
     @Override
-    protected final boolean internalFailure(Throwable exception) {
-        throw new UnsupportedOperationException("SchedulePromise may not be completed explicitly");
+    public final boolean complete(T value) {
+        throw new UnsupportedOperationException("ResultPromise may not be completed explicitly");
+    }
+    
+    @Override
+    public final boolean completeExceptionally(Throwable exception) {
+        throw new UnsupportedOperationException("ResultPromise may not be completed explicitly");
     }
 }

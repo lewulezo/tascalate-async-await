@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -34,9 +34,9 @@ import org.apache.commons.javaflow.api.Continuation;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
-import net.tascalate.async.api.Scheduler;
-import net.tascalate.async.api.suspendable;
-import net.tascalate.async.api.NoActiveAsyncCallException;
+import net.tascalate.async.InvalidCallContextException;
+import net.tascalate.async.Scheduler;
+import net.tascalate.async.suspendable;
 
 /**
  * 
@@ -49,15 +49,15 @@ public class AsyncMethodExecutor {
     private static final AsyncMethodExecutor INSTANCE = new AsyncMethodExecutor();
 
     /**
-     * Execute the {@link AsyncMethod}.
+     * Execute the {@link AbstractAsyncMethod}.
      */
-    public static void execute(AsyncMethod asyncMethod) {
+    public static void execute(AbstractAsyncMethod asyncMethod) {
         INSTANCE.executeTask(asyncMethod);
     }
 
     /**
      */
-    protected void executeTask(AsyncMethod asyncMethod) {
+    protected void executeTask(AbstractAsyncMethod asyncMethod) {
         // Create the initial Continuation
         log.debug("Starting suspended Continuation");
         Continuation continuation = Continuation.startSuspendedWith(asyncMethod);
@@ -86,7 +86,7 @@ public class AsyncMethodExecutor {
 
         // Check if the Continuation was suspended in our way.
         if (!(newContinuation.value() instanceof SuspendParams)) {
-            throw new NoActiveAsyncCallException("Continuation was suspended incorrectly, use AsyncCall.await");
+            throw new InvalidCallContextException("Continuation was suspended incorrectly, use AsyncCall.await");
         }
 
         setupContinuation(newContinuation);
@@ -97,7 +97,7 @@ public class AsyncMethodExecutor {
         SuspendParams<R> suspendParams = (SuspendParams<R>)continuation.value();
         
         CompletionStage<R> future   = suspendParams.future;
-        AsyncMethod suspendedMethod = suspendParams.suspendedMethod;
+        AbstractAsyncMethod suspendedMethod = suspendParams.suspendedMethod;
         
         ContinuationResumer<? super R, Throwable> originalResumer = new ContinuationResumer<>(continuation);
         Runnable wrappedResumer = suspendedMethod.createResumeHandler(originalResumer);
@@ -130,7 +130,7 @@ public class AsyncMethodExecutor {
             return earlyResult.done();
         }
         
-        AsyncMethod currentMethod = AsyncMethodAccessor.currentAsyncMethod();
+        AbstractAsyncMethod currentMethod = InternalCallContext.asyncMethod();
 
         // Register (and wrap) promise we are blocking on
         // to support cancellation from outside
@@ -151,7 +151,7 @@ public class AsyncMethodExecutor {
             return either.done();
         } else {
             // Illegal wake-up
-            throw new NoActiveAsyncCallException(
+            throw new InvalidCallContextException(
                 "Continuation was suspended incorrectly - are your classes instrumented for javaflow?"
             );
         }
@@ -188,10 +188,10 @@ public class AsyncMethodExecutor {
     }
 
     static class SuspendParams<R> {
-        final AsyncMethod suspendedMethod;
+        final AbstractAsyncMethod suspendedMethod;
         final CompletionStage<R> future;
         
-        SuspendParams(AsyncMethod suspendedMethod, CompletionStage<R> future) {
+        SuspendParams(AbstractAsyncMethod suspendedMethod, CompletionStage<R> future) {
             this.suspendedMethod = suspendedMethod;
             this.future = future;
         }

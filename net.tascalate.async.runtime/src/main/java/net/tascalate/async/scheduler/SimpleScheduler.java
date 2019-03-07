@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -29,7 +29,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.Executor;
 import java.util.function.Function;
 
-import net.tascalate.async.api.Scheduler;
+import net.tascalate.async.Scheduler;
 
 public class SimpleScheduler extends AbstractExecutorScheduler<Executor> {
     public static final Scheduler SAME_THREAD_SCHEDULER = new SimpleScheduler(Runnable::run) {
@@ -58,14 +58,18 @@ public class SimpleScheduler extends AbstractExecutorScheduler<Executor> {
     @Override
     public CompletionStage<?> schedule(Runnable command) {
         SchedulePromise<?> result = new SchedulePromise<>();
-        executor.execute(() -> {
-            try {
-                command.run();
-                result.success(null);
-            } catch (final Throwable ex) {
-                result.failure(ex);
+        Runnable wrapper = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    command.run();
+                    result.internalSuccess(null);
+                } catch (final Throwable ex) {
+                    result.internalFailure(ex);
+                }
             }
-        });
+        };
+        executor.execute(wrapper);
         return result;
     }
     

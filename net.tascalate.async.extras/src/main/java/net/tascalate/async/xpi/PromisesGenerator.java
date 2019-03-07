@@ -1,5 +1,5 @@
 /**
- * ﻿Copyright 2015-2017 Valery Silaev (http://vsilaev.com)
+ * ﻿Copyright 2015-2018 Valery Silaev (http://vsilaev.com)
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -24,25 +24,8 @@
  */
 package net.tascalate.async.xpi;
 
-import java.util.function.Function;
-
-import net.tascalate.async.api.Generator;
-import net.tascalate.async.api.GeneratorDecorator;
-import net.tascalate.async.api.suspendable;
+import net.tascalate.async.InteractiveSequence;
 import net.tascalate.concurrent.Promise;
 
-public interface PromisesGenerator<T> extends GeneratorDecorator<T, PromisesGenerator<T>>, AutoCloseable {
-    
-    @suspendable Promise<T> next(Object producerParam);
-    
-    default
-    @suspendable Promise<T> next() {
-        return next(null);
-    }
-    
-    void close();
-    
-    public static <T> Function<Generator<T>, PromisesGenerator<T>> promises() {
-        return PromisesGeneratorImpl.toPromisesGenerator();
-    }
+public interface PromisesGenerator<T> extends PromisesSequence<T>, InteractiveSequence<Promise<T>> {
 }
